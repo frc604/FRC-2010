@@ -1,30 +1,3 @@
-/**
- * This is a program to conrol Quixiver Team 604 2010 robot in C++
- * YOU MUST start with the kickers and pokeys 
- * The controls are as follows:
- * 
- * right Joystick:
- * up- forward right drive
- * down- backwards right drive
- * button1(trigger)- shift to high gear
- * button3- pokey out
- * button2- pokey in
- * 
- * left joystick:
- * up- forward left drive
- * down- backwards leftve
- * button1(trigger)- shift to high gear
- * button2- pokey in
- * button3- pokey out
- * 
- * Manipulator- 
- * button1(trigger)- one kick
- * button2- Ballmagnet in
- * button3- ballmagnet out
- * +/- controls ball magnet speed
- * 
- */
-
 #include "WPILib.h"
 
 /* Port configuration for sensors and actuators. */
@@ -33,8 +6,8 @@
 	#define RIGHT_DRIVE_JOYSTICK_USB_PORT 2
 
 	#define FRONT_LEFT_MOTOR_PORT 5
-	#define FRONT_RIGHT_MOTOR_PORT 8
-	#define REAR_LEFT_MOTOR_PORT 7
+	#define FRONT_RIGHT_MOTOR_PORT 7
+	#define REAR_LEFT_MOTOR_PORT 8
 	#define REAR_RIGHT_MOTOR_PORT 6
 	
 	#define BALL_MAGNET_MOTOR_1_PORT 1
@@ -44,7 +17,6 @@
 	
 	#define COMPRESSOR_PORT 1
 	#define PRESSURE_SWITCH_PORT 1
-	#define LATCH_SOLENOID_PORT 1
 	#define SHIFTER_SOLENOID_PORT 4
 	#define RELEASE_SOLENOID_PORT 3
 	#define POKEY_SOLENOID_FORWARD_PORT 6
@@ -69,8 +41,8 @@
 	#define SOLENOID_POKEY_IN_DIRECTION DoubleSolenoid::kForward
 	#define SOLENOID_POKEY_OUT_DIRECTION DoubleSolenoid::kReverse
 	
-	#define SOLENOID_RELOAD_PUSH_DIRECTION DoubleSolenoid::kForward
-	#define SOLENOID_RELOAD_PULL_DIRECTION DoubleSolenoid::kReverse
+	#define SOLENOID_RELOAD_PUSH_DIRECTION DoubleSolenoid::kReverse
+	#define SOLENOID_RELOAD_PULL_DIRECTION DoubleSolenoid::kForward
 
 	#define SOLENOID_RELEASE_UP_DIRECTION true
 	#define SOLENOID_RELEASE_DOWN_DIRECTION false
@@ -89,7 +61,6 @@ class Robot2010Overkill : public SimpleRobot {
 	
 	Compressor *compressorPump;
 	
-	Solenoid solenoidLatch;
 	Solenoid solenoidShifter;
 	Solenoid solenoidRelease;
 	DoubleSolenoid solenoidPokey;
@@ -104,7 +75,6 @@ class Robot2010Overkill : public SimpleRobot {
 			motorBallMagnet1(BALL_MAGNET_MOTOR_1_PORT),
 			motorBallMagnet2(BALL_MAGNET_MOTOR_2_PORT),
 			digitalReadySensor(READY_SENSOR_PORT),
-			solenoidLatch(LATCH_SOLENOID_PORT),
 			solenoidShifter(SHIFTER_SOLENOID_PORT),
 			solenoidRelease(RELEASE_SOLENOID_PORT),
 			solenoidPokey(POKEY_SOLENOID_FORWARD_PORT, POKEY_SOLENOID_REVERSE_PORT),
@@ -120,11 +90,43 @@ class Robot2010Overkill : public SimpleRobot {
 			GetWatchdog().SetEnabled(false); // No need for Watchdog in Autonomous, either.
 			driveTrain.SetSafetyEnabled(false);
 			
-			compressorPump->Start(); // Let's start up the compressor and charge up for Teleop.
+			int reloadState = 0;
+			Timer *reloadTimer = new Timer();
 			
 			while(IsAutonomous() && IsEnabled()) {
-				// TODO: Latch up the stuff, prepare for firing.
-				// If there's nothing left to do, keep the compressor running.
+				compressorPump->Start();
+				
+				switch(reloadState) {
+					case 0:
+						if(digitalReadySensor.Get() != 1) reloadState = 1;
+						
+						break;
+					case 1:
+						reloadState = 2;
+						
+						reloadTimer->Start();
+						solenoidReload.Set(SOLENOID_RELOAD_PULL_DIRECTION);
+						
+						break;
+					case 2:
+						if(reloadTimer->Get() >= 1.5) {
+							reloadState = 3;
+							
+							reloadTimer->Reset();
+							
+							solenoidRelease.Set(SOLENOID_RELEASE_DOWN_DIRECTION);
+						}
+						
+						break;
+					case 3:
+						if(reloadTimer->Get() >= 0.75) {
+							reloadState = 4;
+							
+							reloadTimer->Stop();
+							
+							solenoidReload.Set(SOLENOID_RELOAD_PUSH_DIRECTION);
+						}
+				}
 			}
 			
 			compressorPump->Stop(); // Okay, fun's over
@@ -134,13 +136,10 @@ class Robot2010Overkill : public SimpleRobot {
 			GetWatchdog().SetEnabled(true); // We do want Watchdog in Teleop, though.
 			driveTrain.SetSafetyEnabled(true);
 			
-			compressorPump->Start(); // Let's start up the compressor too, while we're at it.
-			
 			/* Declare and initialize variables. */
 				Timer *kickTimer = new Timer();
 				
 				int kickState = 0;
-				int readyComp = 0;
 				
 				float floatThrottle = 0.0;
 				
@@ -159,9 +158,12 @@ class Robot2010Overkill : public SimpleRobot {
 				dsLCD->UpdateLCD();
 			
 			while (IsOperatorControl() && IsEnabled()) {
+				GetWatchdog().Feed(); // Feed the watchdog; keep our overlords happy.
+				compressorPump->Start();
+								
 				/* Drive Control */
 					/* Shifting */
-						if(joystickDriveLeft.GetRawButton(DRIVER_SHIFT_BUTTON) || joystickDriveRight.GetRawButton(DRIVER_SHIFT_BUTTON)) {
+						if(joystickDriveLeft.GetRawButton(DRIVER_SHIFT_BUTTON)) {// || joystickDriveRight.GetRawButton(DRIVER_SHIFT_BUTTON)) {
 							solenoidShifter.Set(SOLENOID_SHIFTER_HIGH_POWER_DIRECTION);
 							
 							dsLCD->Printf(DriverStationLCD::kUser_Line3, 1, "                ");
@@ -194,48 +196,81 @@ class Robot2010Overkill : public SimpleRobot {
 						}
 				
 				/* Manipulator Control */
-						/* Kicker Control */
-							switch(kickState) {
-								case 0:
-									if(joystickManipulator.GetRawButton(MANIPULATOR_KICK_BUTTON)) {
-										kickState = 1;
-										
-										kickTimer->Reset();
-										kickTimer->Start();
-										
-										solenoidRelease.Set(SOLENOID_RELEASE_UP_DIRECTION);
-									}
+					/* Kicker Control */
+						switch(kickState) {
+							case 0:
+								if(joystickManipulator.GetRawButton(MANIPULATOR_KICK_BUTTON)) {
+									kickState = 1;
 									
-									break;
-								case 1:
-									if(kickTimer->Get() >= 1) {
-										kickState = 1;
-										
-										kickTimer->Reset();
-										kickTimer->Start();
-										
-										solenoidReload.Set(SOLENOID_RELOAD_PULL_DIRECTION);
-									}
+									kickTimer->Reset();
+									kickTimer->Start();
 									
-									break;
-								case 2:
-									if(digitalReadySensor.Get() == 1 || kickTimer->Get() >= 1.5) {
-										kickState = 0;
-										
-										kickTimer->Stop();
-
-										solenoidRelease.Set(SOLENOID_RELEASE_DOWN_DIRECTION);
-										solenoidReload.Set(SOLENOID_RELOAD_PUSH_DIRECTION);
-									}
+									solenoidReload.Set(SOLENOID_RELOAD_PUSH_DIRECTION);
+									solenoidRelease.Set(SOLENOID_RELEASE_UP_DIRECTION);
 									
-									break;
-							}
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "                     ");
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "Kicking");
+									dsLCD->UpdateLCD();
+								}
+								
+								break;
+							case 1:
+								if(kickTimer->Get() >= 1) {
+									kickState = 2;
+									
+									kickTimer->Reset();
+									
+									solenoidReload.Set(SOLENOID_RELOAD_PULL_DIRECTION);
+									
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "                     ");
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "Reloading");
+									dsLCD->UpdateLCD();
+								}
+								
+								break;
+							case 2:
+								if(kickTimer->Get() >= 1.5) {
+									kickState = 3;
+									
+									kickTimer->Reset();
+									
+									solenoidRelease.Set(SOLENOID_RELEASE_DOWN_DIRECTION);
+									
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "                     ");
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "Latching");
+									dsLCD->UpdateLCD();
+								}
+								
+								break;
+							case 3:
+								if(kickTimer->Get() >= 0.75) {
+									kickState = 4;
+									
+									kickTimer->Reset();
+									
+									solenoidReload.Set(SOLENOID_RELOAD_PUSH_DIRECTION);
+									
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "                     ");
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "Cooldown");
+									dsLCD->UpdateLCD();
+								}
+							case 4:
+								if(kickTimer->Get() >= 10) {
+									kickState = 0;
+									
+									kickTimer->Stop();
+									
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "                     ");
+									dsLCD->Printf(DriverStationLCD::kUser_Line1, 1, "Kicker In");
+									dsLCD->UpdateLCD();
+								}
+						}
 						
 						/* Ball Magnet Control */
-							floatThrottle = joystickManipulator.GetThrottle();
+							floatThrottle = (joystickManipulator.GetThrottle() - 1) / 2;
 							
 							dsLCD->Printf(DriverStationLCD::kUser_Line4, 1, "                 ");
-							dsLCD->Printf(DriverStationLCD::kUser_Line4, 1, "Magnet Power: %f", floatThrottle);
+							dsLCD->Printf(DriverStationLCD::kUser_Line4, 1, "Magnet Power: %f", floatThrottle * -1);
 							
 							dsLCD->UpdateLCD();
 							
@@ -249,6 +284,11 @@ class Robot2010Overkill : public SimpleRobot {
 								motorBallMagnet1.Set(0.0);
 								motorBallMagnet2.Set(0.0);
 							}
+				
+				GetWatchdog().SetEnabled(false);
+				driveTrain.SetSafetyEnabled(false);
+				
+				compressorPump->Stop();
 			}
 		}
 };
