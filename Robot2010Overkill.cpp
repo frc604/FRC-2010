@@ -77,6 +77,24 @@ class Robot2010Overkill : public SimpleRobot {
 	bool trackingThrottle;
 	Timer *throttleTimer;
 	
+	bool dualModeXbox;
+	SendableChooser *dualModeSelector;
+	
+	double const100;
+	double const90;
+	double const80;
+	double const70;
+	double const60;
+	double const50;
+	double const40;
+	double const30;
+	double const20;
+	double const10;
+	double const0;
+	
+	double *speedModeMult;
+	SendableChooser *speedModeSelector;
+	
 	public:
 		Robot2010Overkill(void):
 			joystickManipulator(MANIPULATOR_JOYSTICK_USB_PORT),
@@ -99,6 +117,39 @@ class Robot2010Overkill : public SimpleRobot {
 			
 			virtualThrottle = 0;
 			trackingThrottle = false;
+			
+			dualModeXbox = false;
+			
+			dualModeSelector = new SendableChooser();
+			dualModeSelector->AddDefault("Xbox - Dual Mode OFF", (void*) false);
+			dualModeSelector->AddObject("Xbox - Dual Mode ON", (void*) true);
+
+			const100 = 1;
+			const90 = 0.9;
+			const80 = 0.8;
+			const70 = 0.7;
+			const60 = 0.6;
+			const50 = 0.5;
+			const40 = 0.4;
+			const30 = 0.3;
+			const20 = 0.2;
+			const10 = 0.1;
+			const0 = 0;
+			
+			speedModeMult = &const100;
+			
+			speedModeSelector = new SendableChooser();
+			speedModeSelector->AddDefault("Speed - 100%", &const100);
+			speedModeSelector->AddObject("Speed - 90%", &const90);
+			speedModeSelector->AddObject("Speed - 80%", &const80);
+			speedModeSelector->AddObject("Speed - 70%", &const70);
+			speedModeSelector->AddObject("Speed - 60%", &const60);
+			speedModeSelector->AddObject("Speed - 50%", &const50);
+			speedModeSelector->AddObject("Speed - 40%", &const40);
+			speedModeSelector->AddObject("Speed - 30%", &const30);
+			speedModeSelector->AddObject("Speed - 20%", &const20);
+			speedModeSelector->AddObject("Speed - 10%", &const10);
+			speedModeSelector->AddObject("Speed - 0%", &const0);
 		}
 		
 		typedef enum
@@ -121,25 +172,33 @@ class Robot2010Overkill : public SimpleRobot {
 		
 		bool GetAction(ActionType action) {
 			bool isXbox = joystickDriveLeft.GetThrottle() == 0;
-			
 			switch(action) {
 				case kKick:
 					if(isXbox)
-						return joystickManipulator.GetRawButton(XBOX_KICK_BUTTON);
+						if(dualModeXbox)
+							return joystickManipulator.GetRawButton(XBOX_KICK_BUTTON) || joystickDriveRight.GetRawButton(XBOX_KICK_BUTTON);
+						else
+							return joystickManipulator.GetRawButton(XBOX_KICK_BUTTON);
 					else
 						return joystickManipulator.GetRawButton(MANIPULATOR_KICK_BUTTON);
 					
 					break;
 				case kSuck:
 					if(isXbox)
-						return joystickManipulator.GetRawButton(XBOX_BALL_MAGNET_IN_BUTTON);
+						if(dualModeXbox)
+							return joystickManipulator.GetRawButton(XBOX_BALL_MAGNET_IN_BUTTON) || joystickDriveRight.GetRawButton(XBOX_BALL_MAGNET_IN_BUTTON);
+						else
+							return joystickManipulator.GetRawButton(XBOX_BALL_MAGNET_IN_BUTTON);
 					else
 						return joystickManipulator.GetRawButton(MANIPULATOR_BALL_MAGNET_IN_BUTTON);
 					
 					break;
 				case kSpit:
 					if(isXbox)
-						return joystickManipulator.GetRawButton(XBOX_BALL_MAGNET_OUT_BUTTON);
+						if(dualModeXbox)
+							return joystickManipulator.GetRawButton(XBOX_BALL_MAGNET_OUT_BUTTON) || joystickDriveRight.GetRawButton(XBOX_BALL_MAGNET_OUT_BUTTON);
+						else
+							return joystickManipulator.GetRawButton(XBOX_BALL_MAGNET_OUT_BUTTON);
 					else
 						return joystickManipulator.GetRawButton(MANIPULATOR_BALL_MAGNET_OUT_BUTTON);
 					
@@ -153,7 +212,10 @@ class Robot2010Overkill : public SimpleRobot {
 					break;
 				case kPokey:
 					if(isXbox)
-						return joystickManipulator.GetRawButton(XBOX_POKEY_BUTTON);
+						if(dualModeXbox)
+							return joystickManipulator.GetRawButton(XBOX_POKEY_BUTTON) || joystickDriveRight.GetRawButton(XBOX_POKEY_BUTTON);
+						else
+							return joystickManipulator.GetRawButton(XBOX_POKEY_BUTTON);
 					else
 						return joystickDriveLeft.GetRawButton(DRIVER_POKEY_BUTTON) || joystickDriveRight.GetRawButton(DRIVER_POKEY_BUTTON);
 					
@@ -288,12 +350,9 @@ class Robot2010Overkill : public SimpleRobot {
 			GetWatchdog().SetEnabled(true); // We do want Watchdog in Teleop, though.
 			driveTrain.SetSafetyEnabled(true);
 			
-			/* Declare and initialize variables. */
-				Timer *kickTimer = new Timer();
-				
-				int kickState = 0;
-				
-				float floatThrottle = 0.0;
+			Timer *kickTimer = new Timer();
+			int kickState = 0;
+			float floatThrottle = 0.0;
 				
 			/* Debug Functionality */
 				DriverStationLCD *dsLCD = DriverStationLCD::GetInstance();
@@ -311,10 +370,16 @@ class Robot2010Overkill : public SimpleRobot {
 				dsLCD->Printf(DriverStationLCD::kUser_Line5, 1, "Joystick Mode");
 				dsLCD->UpdateLCD();
 			
+			SmartDashboard::GetInstance()->PutData("dualModeXbox?", dualModeSelector);
+			SmartDashboard::GetInstance()->PutData("speedMode?", speedModeSelector);
+			
 			while (IsOperatorControl() && IsEnabled()) {
 				GetWatchdog().Feed(); // Feed the watchdog; keep our overlords happy.
 				compressorPump->Start();
 				
+				dualModeXbox = (bool) dualModeSelector->GetSelected();
+				speedModeMult = static_cast<double*>(speedModeSelector->GetSelected());
+								
 				if(joystickDriveLeft.GetThrottle() == 0) {
 					dsLCD->Printf(DriverStationLCD::kUser_Line5, 1, "                     ");
 					dsLCD->Printf(DriverStationLCD::kUser_Line5, 1, "Xbox Mode");
@@ -324,7 +389,7 @@ class Robot2010Overkill : public SimpleRobot {
 					dsLCD->Printf(DriverStationLCD::kUser_Line5, 1, "Joystick Mode");
 					dsLCD->UpdateLCD();
 				}
-				
+								
 				/* Manipulator Control */
 					/* Kicker Control */
 						switch(kickState) {
@@ -438,7 +503,7 @@ class Robot2010Overkill : public SimpleRobot {
 						}
 					
 					/* Drive Train */
-						driveTrain.TankDrive(GetAxis(kLeftY), GetAxis(kRightY));
+						driveTrain.TankDrive(GetAxis(kLeftY) * *speedModeMult, GetAxis(kRightY) * *speedModeMult);
 					
 					/* Pokey Control */
 						if(GetAction(kPokey)) {
