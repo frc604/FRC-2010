@@ -1,4 +1,4 @@
-FRC 2010 "Overkill"
+FRC Team 604: 2011 ["Barracuda"](http://604robotics.com/Quixilver/Robots/)
 ===================
 
 This is [FIRST Team 604](http://604robotics.com/)'s 2010 robot code, rewritten from LabVIEW into C++ with the WPILib framework.
